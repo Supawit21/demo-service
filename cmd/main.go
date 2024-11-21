@@ -1,11 +1,14 @@
 package main
 
 import (
-	"Supawit21/demo_service/internal/controller"
+	"Supawit21/demo_service/internal/handler"
 	"Supawit21/demo_service/internal/repository"
 	"Supawit21/demo_service/internal/service"
 	"Supawit21/demo_service/pkg/database"
+	"Supawit21/demo_service/pkg/utils"
 	"log"
+	"net"
+	"os"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/joho/godotenv"
@@ -17,14 +20,28 @@ func main() {
 		log.Fatal("Error loading .env file")
 	}
 
-	app := fiber.New()
-
-	employeedb := database.InitialDatabase()
-	employeeRepo := repository.NewEmployeeRepository(employeedb)
+	employeeDB := database.InitialDatabase()
+	employeeRepo := repository.NewEmployeeRepository(employeeDB)
 	employeeService := service.NewEmployeeService(employeeRepo)
-	employeeController := controller.NewEmployeeController(employeeService)
+	employeeHandler := handler.NewEmployeeHandler(employeeService)
 
-	app.Post("/employee", employeeController.CreateEmployee)
+	// healthcheck
+	healthCheck := utils.HealthCheck(employeeDB)
 
-	log.Fatal(app.Listen(":8888"))
+	app := fiber.New()
+	api := app.Group("/api")
+
+	apiVersion := api.Group("/v1")
+	apiVersion.Get("/employee", employeeHandler.GetEmployee)
+	apiVersion.Get("/employee/:id", employeeHandler.GetEmployeeById)
+	apiVersion.Post("/employee", employeeHandler.CreateEmployee)
+	apiVersion.Put("/employee/:id", employeeHandler.UpdateEmployee)
+
+	// endpoint healthcheck
+	api.Get("/health", func(c *fiber.Ctx) error {
+		return handler.NewHealthHandler(c, healthCheck)
+	})
+
+	ln, _ := net.Listen("tcp", ":"+os.Getenv("APP_PORT"))
+	app.Listener(ln)
 }
